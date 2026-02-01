@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Themed Rhythm Visualizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            /* 기본 테마 (Dark Neon) */
+            --bg-color: #050505;
+            --text-color: #eee;
+            --accent-color: #00ccff;
+            --panel-bg: rgba(18, 18, 18, 0.98);
+            --input-bg: #1a1a1a;
+            --input-text: #ffffff;
+            --border-color: #333;
+            --trail-color: rgba(5, 5, 5, 0.3);
+            --btn-bg: #1a1a1a;
+            --btn-hover: #333;
+        }
+
+        body {
+            margin: 0; overflow: hidden; 
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Courier New', Courier, monospace;
+            touch-action: none; user-select: none;
+            transition: background-color 0.5s, color 0.5s;
+        }
+        canvas { display: block; }
+
+        .neon-text {
+            color: var(--text-color);
+            text-shadow: 0 0 10px var(--accent-color), 0 0 20px var(--accent-color);
+        }
+
+        /* 오버레이 & 패널 */
+        #overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--panel-bg);
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            z-index: 50; cursor: pointer; transition: opacity 0.3s ease;
+        }
+        #settings-panel {
+            position: fixed; top: 0; right: 0; height: 100%; width: 320px;
+            background: var(--panel-bg); 
+            border-left: 1px solid var(--border-color);
+            transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 40; padding: 20px; display: flex; flex-direction: column; gap: 20px;
+            box-shadow: -10px 0 30px rgba(0,0,0,0.5); overflow-y: auto;
+        }
+        #settings-panel.open { transform: translateX(0); }
+
+        /* 버튼 및 입력창 공통 스타일 */
+        .sound-grid, .theme-grid {
+            display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;
+        }
+        .theme-grid { grid-template-columns: repeat(3, 1fr); }
+
+        .custom-btn {
+            padding: 10px; border: 1px solid var(--border-color); 
+            background: var(--btn-bg); color: var(--text-color);
+            border-radius: 6px; font-size: 11px; cursor: pointer; transition: all 0.2s;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+        }
+        .custom-btn:hover { border-color: var(--accent-color); background: var(--btn-hover); }
+        .custom-btn.active {
+            background: var(--accent-color); 
+            border-color: var(--accent-color); 
+            color: #fff; /* 활성 상태 텍스트는 항상 흰색 */
+            font-weight: bold;
+            box-shadow: 0 0 10px var(--accent-color);
+        }
+
+        /* 가독성 높은 입력창 */
+        label { 
+            display: block; color: var(--accent-color); opacity: 0.8;
+            font-size: 11px; margin-bottom: 6px; font-weight: bold; letter-spacing: 1px; 
+        }
+        textarea, input[type=range] { 
+            width: 100%; 
+            background: var(--input-bg); 
+            border: 1px solid var(--border-color); 
+            color: var(--input-text); 
+            border-radius: 4px; 
+            transition: border-color 0.3s, background-color 0.3s, color 0.3s;
+        }
+        textarea:focus { outline: none; border-color: var(--accent-color); }
+        
+        .hidden { opacity: 0; pointer-events: none; }
+    </style>
+</head>
+<body>
+
+<!-- 시작 화면 -->
+<div id="overlay">
+    <h1 class="text-4xl md:text-6xl font-bold mb-4 neon-text tracking-widest text-center">TAP TO START</h1>
+    <p style="color: var(--text-color); opacity: 0.7;" class="text-xs md:text-sm">Rhythm & Harmony Visualizer</p>
+</div>
+
+<!-- 설정 버튼 -->
+<div class="absolute top-4 right-4 z-30">
+    <button id="settings-btn" class="text-2xl hover:opacity-80 transition-opacity opacity-0 duration-500" style="color: var(--text-color);">
+        <i class="fas fa-sliders-h"></i>
+    </button>
+</div>
+
+<!-- 설정 패널 -->
+<div id="settings-panel">
+    <div class="flex justify-between items-center border-b pb-4" style="border-color: var(--border-color);">
+        <h2 class="text-lg font-bold" style="color: var(--accent-color);">SETTINGS</h2>
+        <button id="close-settings" class="hover:opacity-100 opacity-60" style="color: var(--text-color);"><i class="fas fa-times"></i></button>
+    </div>
+
+    <!-- 1. 테마 선택 (New Feature) -->
+    <div>
+        <label>VISUAL THEME</label>
+        <div class="theme-grid">
+            <button class="custom-btn active" onclick="setTheme('dark')" data-theme="dark">
+                <i class="fas fa-moon"></i> Dark
+            </button>
+            <button class="custom-btn" onclick="setTheme('light')" data-theme="light">
+                <i class="fas fa-sun"></i> Light
+            </button>
+            <button class="custom-btn" onclick="setTheme('midnight')" data-theme="midnight">
+                <i class="fas fa-star"></i> Midnight
+            </button>
+        </div>
+    </div>
+
+    <!-- 2. 사운드 선택 -->
+    <div>
+        <label>SOUND LAYERS (MAX 3)</label>
+        <div class="sound-grid" id="sound-grid">
+            <button class="custom-btn active" data-sound="drum"><i class="fas fa-drum"></i> Beat Drum</button>
+            <button class="custom-btn" data-sound="bass"><i class="fas fa-wave-square"></i> Deep Bass</button>
+            <button class="custom-btn" data-sound="chord"><i class="fas fa-music"></i> Dreamy Chord</button>
+            <button class="custom-btn" data-sound="glass"><i class="fas fa-bell"></i> Glass Bell</button>
+            <button class="custom-btn" data-sound="8bit"><i class="fas fa-gamepad"></i> 8-Bit Retro</button>
+            <button class="custom-btn" data-sound="wood"><i class="fas fa-tree"></i> Woodblock</button>
+        </div>
+        <p class="text-[10px] mt-2 text-right opacity-60" style="color: var(--text-color);" id="selection-count">1/3 Selected</p>
+    </div>
+
+    <!-- 3. 텍스트 입력 (가독성 개선) -->
+    <div>
+        <label>CUSTOM WORDS</label>
+        <textarea id="word-input" rows="4" class="p-2 text-xs font-bold" placeholder="Create your rhythm...">DREAM, CREATE, INSPIRE, HARMONY, FOCUS, FLOW</textarea>
+        <button id="update-btn" class="w-full mt-2 py-2 rounded text-xs font-bold transition-colors border" 
+                style="background: var(--btn-bg); color: var(--accent-color); border-color: var(--border-color);">
+            UPDATE TEXT
+        </button>
+    </div>
+
+    <!-- 4. 슬라이더 -->
+    <div class="space-y-4">
+        <div>
+            <label>SPEED: <span id="speed-val" style="color: var(--text-color);">1.0x</span></label>
+            <input type="range" id="speed-range" min="0.5" max="2.0" step="0.1" value="1.0" class="h-1 accent-[var(--accent-color)] cursor-pointer">
+        </div>
+        <div>
+            <label>VOLUME: <span id="vol-val" style="color: var(--text-color);">80%</span></label>
+            <input type="range" id="vol-range" min="0" max="100" value="80" class="h-1 accent-[var(--accent-color)] cursor-pointer">
+        </div>
+    </div>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+    /* --- 0. THEME ENGINE --- */
+    const themes = {
+        'dark': {
+            '--bg-color': '#050505',
+            '--text-color': '#eeeeee',
+            '--accent-color': '#00ccff',
+            '--panel-bg': 'rgba(18, 18, 18, 0.98)',
+            '--input-bg': '#1a1a1a',
+            '--input-text': '#ffffff',
+            '--border-color': '#333333',
+            '--trail-color': 'rgba(5, 5, 5, 0.3)',
+            '--btn-bg': '#1a1a1a',
+            '--btn-hover': '#333333'
+        },
+        'light': {
+            '--bg-color': '#f0f2f5', /* 부드러운 회색조 흰색 */
+            '--text-color': '#1a1a1a',
+            '--accent-color': '#0055ff', /* 진한 파랑으로 가독성 확보 */
+            '--panel-bg': 'rgba(255, 255, 255, 0.98)',
+            '--input-bg': '#ffffff',
+            '--input-text': '#000000', /* 흰 배경에 검은 글씨 */
+            '--border-color': '#cccccc',
+            '--trail-color': 'rgba(240, 242, 245, 0.3)',
+            '--btn-bg': '#f9f9f9',
+            '--btn-hover': '#e0e0e0'
+        },
+        'midnight': {
+            '--bg-color': '#0f0c29', /* 짙은 남색 */
+            '--text-color': '#ffd700', /* 금색 텍스트 */
+            '--accent-color': '#ff007f', /* 핫핑크 포인트 */
+            '--panel-bg': 'rgba(15, 12, 41, 0.95)',
+            '--input-bg': '#24243e',
+            '--input-text': '#fff8e7',
+            '--border-color': '#4a4a6a',
+            '--trail-color': 'rgba(15, 12, 41, 0.3)',
+            '--btn-bg': '#24243e',
+            '--btn-hover': '#302b63'
+        }
+    };
+
+    let currentTrailColor = themes['dark']['--trail-color'];
+
+    function setTheme(themeName) {
+        const root = document.documentElement;
+        const theme = themes[themeName];
+        
+        // CSS 변수 업데이트
+        for (const key in theme) {
+            root.style.setProperty(key, theme[key]);
+        }
+        
+        // JS 내부 변수 업데이트
+        currentTrailColor = theme['--trail-color'];
+
+        // 버튼 활성화 상태 업데이트
+        document.querySelectorAll('.theme-grid .custom-btn').forEach(btn => {
+            btn.classList.remove('active');
+            if(btn.dataset.theme === themeName) btn.classList.add('active');
+        });
+    }
+
+    /* --- 1. CORE & AUDIO ENGINE --- */
+    const COLORS = ['#FF0055', '#00FF99', '#00CCFF', '#FFFF00', '#FF3300', '#CC00FF'];
+    let currentWords = [];
+    let isPlaying = false;
+    let audioCtx;
+    let activeSounds = new Set(['drum']);
+    
+    let settings = { volume: 0.8, speed: 1.0 };
+    let rhythmIndex = 0;
+    let rhythmTimer;
+
+    const BASE_PATTERN = [600, 600, 600, 600, 300, 300, 300, 300, 150, 150, 150, 150, 600, 100];
+
+    function initAudio() {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+    }
+
+    const SoundLib = {
+        'drum': (t, strong, vol) => {
+            const g = audioCtx.createGain(); g.connect(audioCtx.destination);
+            if(strong) {
+                const o = audioCtx.createOscillator(); o.frequency.setValueAtTime(150, t);
+                o.frequency.exponentialRampToValueAtTime(0.01, t+0.5);
+                g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.01, t+0.5);
+                o.connect(g); o.start(t); o.stop(t+0.5);
+            } else {
+                const bSize = audioCtx.sampleRate * 0.1;
+                const b = audioCtx.createBuffer(1, bSize, audioCtx.sampleRate);
+                const d = b.getChannelData(0);
+                for(let i=0; i<bSize; i++) d[i] = Math.random()*2-1;
+                const s = audioCtx.createBufferSource(); s.buffer = b;
+                const f = audioCtx.createBiquadFilter(); f.type='highpass'; f.frequency.value=4000;
+                g.gain.setValueAtTime(vol*0.4, t); g.gain.exponentialRampToValueAtTime(0.01, t+0.05);
+                s.connect(f); f.connect(g); s.start(t);
+            }
+        },
+        'bass': (t, strong, vol) => {
+            const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+            o.type = 'triangle';
+            o.frequency.value = strong ? 65.41 : 49.00; 
+            g.gain.setValueAtTime(vol*0.6, t); g.gain.linearRampToValueAtTime(0, t+0.4);
+            o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t+0.4);
+        },
+        'chord': (t, strong, vol) => {
+            const master = audioCtx.createGain(); master.gain.value = vol * 0.2; master.connect(audioCtx.destination);
+            const freqs = strong ? [261.6, 329.6, 392.0] : [196.0, 246.9, 293.7];
+            freqs.forEach((f, i) => {
+                const o = audioCtx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+                if(i>0) o.detune.value = Math.random()*10 - 5; 
+                const env = audioCtx.createGain();
+                env.gain.setValueAtTime(0, t);
+                env.gain.linearRampToValueAtTime(1, t+0.05);
+                env.gain.exponentialRampToValueAtTime(0.01, t+0.6);
+                o.connect(env); env.connect(master); o.start(t); o.stop(t+0.6);
+            });
+        },
+        'glass': (t, strong, vol) => {
+            const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+            o.type = 'sine'; o.frequency.value = strong ? 1046.5 : 523.25;
+            g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol*0.3, t+0.01);
+            g.gain.exponentialRampToValueAtTime(0.001, t+0.8);
+            o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t+0.8);
+        },
+        '8bit': (t, strong, vol) => {
+            const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+            o.type = 'square'; o.frequency.value = strong ? 523.25 : 261.63; 
+            g.gain.setValueAtTime(vol*0.15, t); g.gain.exponentialRampToValueAtTime(0.01, t+0.1);
+            o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t+0.1);
+        },
+        'wood': (t, strong, vol) => {
+            const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+            o.type = 'sine'; o.frequency.value = strong ? 1200 : 800;
+            g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.01, t+0.1);
+            o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t+0.1);
+        }
+    };
+
+    function playActiveSounds(isStrong) {
+        if (!audioCtx) return;
+        const now = audioCtx.currentTime;
+        activeSounds.forEach(key => {
+            if (SoundLib[key]) SoundLib[key](now, isStrong, settings.volume);
+        });
+    }
+
+    /* --- 2. VISUAL ENGINE --- */
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    let width, height;
+    let particles = [], texts = [];
+
+    function resize() { width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight; }
+    window.addEventListener('resize', resize); resize();
+
+    class Particle {
+        constructor(x, y, color) {
+            this.x=x; this.y=y; this.c=color;
+            const a = Math.random()*6.28; const s = Math.random()*5+2;
+            this.vx=Math.cos(a)*s; this.vy=Math.sin(a)*s;
+            this.life=1; this.decay=Math.random()*0.02+0.01; this.sz=Math.random()*6+2;
+        }
+        u() { this.x+=this.vx; this.y+=this.vy; this.vy+=0.1; this.vx*=0.96; this.vy*=0.96; this.life-=this.decay; this.sz*=0.94; }
+        d(ctx) { ctx.fillStyle=this.c; ctx.globalAlpha=this.life; ctx.fillRect(this.x,this.y,this.sz,this.sz); ctx.globalAlpha=1; }
+    }
+
+    class FText {
+        constructor(str) {
+            this.t=str; this.x=width/2+(Math.random()-0.5)*300; this.y=height/2+(Math.random()-0.5)*200;
+            this.life=1; this.sc=0.5; this.c=COLORS[Math.floor(Math.random()*COLORS.length)];
+            this.r=(Math.random()-0.5)*0.2;
+        }
+        u() { this.life-=0.015; this.sc+=(this.sc<1)?0.12:0.003; }
+        d(ctx) {
+            ctx.save(); ctx.translate(this.x,this.y); ctx.rotate(this.r); ctx.scale(this.sc,this.sc);
+            // 폰트 스타일도 CSS 변수 따르도록 설정 가능하나, Canvas는 직접 지정해야 함.
+            ctx.font="900 70px 'Courier New'"; ctx.textAlign="center"; ctx.textBaseline="middle";
+            
+            // 텍스트 그림자: 라이트 모드에서는 그림자를 조금 약하게 하거나 색을 진하게
+            const shadowColor = getComputedStyle(document.documentElement).getPropertyValue('--accent-color').trim();
+            ctx.shadowColor=this.c; ctx.shadowBlur=30; 
+            
+            ctx.fillStyle=this.c; ctx.globalAlpha=this.life;
+            ctx.fillText(this.t,0,0); 
+            
+            // 하이라이트: 라이트 모드면 검은색, 다크 모드면 흰색이 좋음
+            // 간단히 테마에 따라 분기
+            const isLight = document.documentElement.style.getPropertyValue('--bg-color') === '#f0f2f5';
+            ctx.fillStyle = isLight ? "#333" : "#fff"; 
+            
+            ctx.shadowBlur=0; ctx.fillText(this.t,0,0);
+            ctx.restore();
+        }
+    }
+
+    /* --- 3. LOOP --- */
+    function spawnBeat() {
+        if (!isPlaying) return;
+        const isStrong = (rhythmIndex % 4 === 0);
+        
+        playActiveSounds(isStrong); 
+
+        if (currentWords.length > 0) {
+            const word = currentWords[Math.floor(Math.random()*currentWords.length)];
+            const t = new FText(word); texts.push(t);
+            const pCount = isStrong ? 30 + (activeSounds.size * 5) : 10;
+            for(let i=0; i<pCount; i++) particles.push(new Particle(t.x, t.y, t.c));
+        }
+
+        const delay = (BASE_PATTERN[rhythmIndex] / settings.speed);
+        rhythmIndex = (rhythmIndex + 1) % BASE_PATTERN.length;
+        rhythmTimer = setTimeout(spawnBeat, delay);
+    }
+
+    function animate() {
+        // 배경을 테마에 맞춰 칠함 (잔상 효과)
+        ctx.fillStyle = currentTrailColor; 
+        ctx.fillRect(0, 0, width, height);
+        
+        for(let i=particles.length-1; i>=0; i--) { particles[i].u(); particles[i].d(ctx); if(particles[i].life<=0) particles.splice(i,1); }
+        for(let i=texts.length-1; i>=0; i--) { texts[i].u(); texts[i].d(ctx); if(texts[i].life<=0) texts.splice(i,1); }
+        if(isPlaying) requestAnimationFrame(animate);
+    }
+
+    /* --- 4. UI INTERACTION --- */
+    const overlay = document.getElementById('overlay');
+    const panel = document.getElementById('settings-panel');
+    const btns = document.querySelectorAll('.sound-btn'); // 클래스명 변경 주의
+    const countLabel = document.getElementById('selection-count');
+    
+    function updateWords() {
+        currentWords = document.getElementById('word-input').value.split(',').map(s=>s.trim().toUpperCase()).filter(s=>s);
+    }
+    updateWords();
+
+    overlay.addEventListener('click', () => {
+        if(isPlaying) return;
+        initAudio(); overlay.classList.add('hidden');
+        document.getElementById('settings-btn').style.opacity = '1';
+        isPlaying = true; animate(); spawnBeat();
+    });
+
+    document.getElementById('settings-btn').addEventListener('click', ()=>panel.classList.add('open'));
+    document.getElementById('close-settings').addEventListener('click', ()=>panel.classList.remove('open'));
+
+    // 사운드 버튼 이벤트 (클래스명 .custom-btn [data-sound] 로 변경됨)
+    document.querySelectorAll('.custom-btn[data-sound]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const sound = btn.dataset.sound;
+            if (activeSounds.has(sound)) {
+                if (activeSounds.size > 1) {
+                    activeSounds.delete(sound);
+                    btn.classList.remove('active');
+                }
+            } else {
+                if (activeSounds.size < 3) {
+                    activeSounds.add(sound);
+                    btn.classList.add('active');
+                } else {
+                    btn.style.borderColor = 'red';
+                    setTimeout(()=>btn.style.borderColor = '', 200);
+                }
+            }
+            countLabel.textContent = `${activeSounds.size}/3 Selected`;
+        });
+    });
+
+    document.getElementById('speed-range').addEventListener('input', e => {
+        settings.speed = parseFloat(e.target.value);
+        document.getElementById('speed-val').textContent = settings.speed.toFixed(1) + 'x';
+    });
+    document.getElementById('vol-range').addEventListener('input', e => {
+        settings.volume = e.target.value / 100;
+        document.getElementById('vol-val').textContent = e.target.value + '%';
+    });
+    document.getElementById('update-btn').addEventListener('click', () => {
+        updateWords();
+        const b = document.getElementById('update-btn');
+        b.textContent = "UPDATED!";
+        setTimeout(()=>b.textContent="UPDATE TEXT", 1000);
+    });
+
+</script>
+</body>
+</html>
